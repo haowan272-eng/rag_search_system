@@ -20,7 +20,9 @@ from app.rag.answering import (
     validate_answer_citations,
 )
 from app.rag.chain import Retriever
+from app.rag.query_rewriter import get_query_rewriter
 from app.rag.embeddings import get_embedder
+from app.core.config import RAG_QUERY_REWRITE_ENABLED
 from app.schemas.rag import (
     AnswerRequest,
     AnswerResponse,
@@ -38,6 +40,27 @@ from app.services.short_term_memory import append_short_term_message
 from app.core.database import SessionLocal
 
 logger = logging.getLogger(__name__)
+
+
+def _rewrite_query_for_retrieval(
+    question: str,
+    history: str,
+    memory: str,
+    task_state: str,
+    enabled: bool,
+) -> str:
+    if not enabled:
+        return question
+    try:
+        return get_query_rewriter().rewrite(
+            question=question,
+            history=history,
+            memory=memory,
+            task_state=task_state,
+        )
+    except Exception:
+        logger.exception("query rewrite failed; falling back to original query")
+        return question
 
 
 def _get_user(db: Session, username: str) -> User:
@@ -110,6 +133,7 @@ def run_rag_answer(
     on_token: Optional[Callable[[str], None]] = None,
 ) -> AnswerResponse:
     user = _get_user(db, username)
+    had_conversation = body.conversation_id is not None
     conversation = (
         _private_conversation(db, body.conversation_id, user.id)
         if body.conversation_id is not None
@@ -156,7 +180,15 @@ def run_rag_answer(
         db.commit()
 
     memories = load_memory(db, user.id) if body.use_memory else []
-    search_query = retrieval_query(body.query, memories)
+    memory_text = memory_context(memories)
+    rewritten_query = _rewrite_query_for_retrieval(
+        question=body.query,
+        history=context_state.history,
+        memory=memory_text,
+        task_state=context_state.task_state,
+        enabled=had_conversation and body.rewrite_query and RAG_QUERY_REWRITE_ENABLED,
+    )
+    search_query = retrieval_query(rewritten_query, memories)
     personal_space_only = effective_kb_id is None and body.document_id is None
     retrieval_user_id = user.id if personal_space_only else None
     try:
@@ -197,7 +229,7 @@ def run_rag_answer(
                 "question": body.query,
                 "context": evidence,
                 "history": context_state.history,
-                "memory": memory_context(memories),
+                "memory": memory_text,
                 "task_state": context_state.task_state,
             }
             if on_token is None:
@@ -244,6 +276,7 @@ def run_rag_answer(
 
     return AnswerResponse(
         query=body.query,
+        rewritten_query=rewritten_query if rewritten_query != body.query else None,
         answer=answer,
         conversation_id=conversation.id,
         citations=citations,

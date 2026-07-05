@@ -12,6 +12,7 @@ class AnswerRequest(BaseModel):
     bm25_weight: float = Field(default=0.4, ge=0.0, le=1.0)
     conversation_id: Optional[int] = None
     use_memory: bool = True
+    rewrite_query: bool = True
 
 
 class CitationResult(BaseModel):
@@ -38,6 +39,7 @@ class MemoryResult(BaseModel):
 
 class AnswerResponse(BaseModel):
     query: str
+    rewritten_query: Optional[str] = None
     answer: str
     conversation_id: int
     citations: list[CitationResult]

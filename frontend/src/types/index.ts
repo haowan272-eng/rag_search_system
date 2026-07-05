@@ -61,6 +61,7 @@ export interface Citation {
 
 export interface RagAnswer {
   query: string
+  rewritten_query?: string | null
   answer: string
   conversation_id: number | null
   citations: Citation[]

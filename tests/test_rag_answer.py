@@ -87,6 +87,50 @@ def test_answer_returns_deterministic_citation(client, auth_user, monkeypatch):
     assert data["citations"][0]["quote"] == "退款申请应在购买后七天内提交。"
 
 
+def test_existing_conversation_rewrites_query_before_retrieval(
+    client,
+    auth_user,
+    monkeypatch,
+):
+    _, headers = auth_user
+    embedder = MagicMock()
+    monkeypatch.setattr("app.services.rag_service.get_embedder", lambda: embedder)
+    monkeypatch.setattr("app.services.rag_service.RAG_QUERY_REWRITE_ENABLED", True)
+    rewriter = MagicMock()
+    rewriter.rewrite.return_value = "rewritten refund deadline query"
+    monkeypatch.setattr("app.services.rag_service.get_query_rewriter", lambda: rewriter)
+    captured = {}
+
+    def retrieve(*args, **kwargs):
+        captured.update(kwargs)
+        return []
+
+    monkeypatch.setattr("app.rag.chain.Retriever.retrieve", retrieve)
+
+    first = client.post(
+        "/embedding/rag/answer",
+        json={"query": "refund policy", "top_k": 3},
+        headers=headers,
+    )
+    assert first.status_code == 200
+    rewriter.rewrite.assert_not_called()
+
+    second = client.post(
+        "/embedding/rag/answer",
+        json={
+            "query": "what about the deadline?",
+            "conversation_id": first.json()["conversation_id"],
+            "top_k": 3,
+        },
+        headers=headers,
+    )
+
+    assert second.status_code == 200
+    assert captured["query"] == "rewritten refund deadline query"
+    assert second.json()["rewritten_query"] == "rewritten refund deadline query"
+    rewriter.rewrite.assert_called_once()
+
+
 def test_stream_answer_emits_tokens_and_validated_final(
     client, auth_user, db_session, monkeypatch
 ):
