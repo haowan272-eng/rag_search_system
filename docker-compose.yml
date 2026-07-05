@@ -93,7 +93,7 @@
     image: postgres:16-alpine
     container_name: rag_ai-postgres
     ports:
-      - "5432:5432"
+      - "15432:5432"
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-rag_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-rag_password}
@@ -121,7 +121,7 @@
     image: redis:7-alpine
     container_name: rag_ai-redis
     ports:
-      - "6379:6379"
+      - "16379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes --appendfsync everysec --maxmemory 256mb --maxmemory-policy noeviction
@@ -137,3 +137,4 @@ volumes:
   qdrant_data:
   redis_data:
   uploads_data:
+
