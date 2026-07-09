@@ -18,10 +18,11 @@ from app.core.config import (
     SEED_ADMIN_PASSWORD,
     SEED_ADMIN_USERNAME,
     REFRESH_SECRET_KEY,
+    RUN_MIGRATIONS_ON_STARTUP,
     SECRET_KEY,
 )
-from .migrations import run_migrations
 from .logging_config import request_id_var, setup_logging
+from .db_migration import upgrade_database
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -91,10 +92,12 @@ def on_startup():
     if APP_ENV == "production" and "*" in CORS_ORIGINS:
         raise RuntimeError("生产环境 CORS_ORIGINS 不允许使用通配")
 
-    # 建表；已存在的表不会重复创建。
-    Base.metadata.create_all(bind=engine)
-    # 为已有 PostgreSQL 数据库补齐新增字段；失败时终止启动，避免带错误 Schema 运行。
-    run_migrations(engine)
+    # PostgreSQL schema changes are managed by Alembic. Local tests can still
+    # create lightweight databases directly from SQLAlchemy metadata.
+    if engine.dialect.name == "postgresql" and RUN_MIGRATIONS_ON_STARTUP:
+        upgrade_database()
+    elif engine.dialect.name != "postgresql":
+        Base.metadata.create_all(bind=engine)
 
     # 种子用户：首次启动时按配置创建管理员账号，使用 bcrypt 哈希存储密码。
     db = SessionLocal()

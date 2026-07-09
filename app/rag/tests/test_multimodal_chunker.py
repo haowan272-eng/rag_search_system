@@ -29,7 +29,7 @@ def test_chunk_text_applies_cleaning_before_split():
 
 
 def test_supported_document_formats_cover_text_office_and_images():
-    expected = {".pdf", ".docx", ".pptx", ".xlsx", ".txt", ".md", ".png", ".jpg", ".gif"}
+    expected = {".pdf", ".doc", ".docx", ".pptx", ".xlsx", ".txt", ".md", ".png", ".jpg", ".gif"}
     assert expected <= SUPPORTED_DOCUMENT_EXTENSIONS
 
 

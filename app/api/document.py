@@ -46,7 +46,7 @@ def _has_valid_signature(extension: str, header: bytes) -> bool:
         return len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] == b"WEBP"
     if extension in _ZIP_FORMATS:
         return header.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"))
-    if extension == ".xls":
+    if extension in {".doc", ".xls"}:
         return header.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
     return True
 

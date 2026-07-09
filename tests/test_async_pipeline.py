@@ -15,6 +15,34 @@ def test_upload_endpoint_returns_202():
     assert route.status_code == 202
 
 
+def test_legacy_doc_signature_is_supported():
+    from app.api.document import _has_valid_signature
+
+    ole_header = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\x00" * 24
+
+    assert _has_valid_signature(".doc", ole_header)
+    assert not _has_valid_signature(".doc", b"PK\x03\x04" + b"\x00" * 28)
+
+
+def test_legacy_doc_fallback_uses_antiword(tmp_path, monkeypatch):
+    from app.rag.chunker import _fallback_text_reader
+
+    doc_path = tmp_path / "legacy.doc"
+    doc_path.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+
+    class Result:
+        stdout = "  legacy   content  "
+
+    def fake_run(command, **kwargs):
+        assert command == ["antiword", str(doc_path)]
+        assert kwargs["capture_output"] is True
+        return Result()
+
+    monkeypatch.setattr("app.rag.chunker.subprocess.run", fake_run)
+
+    assert _fallback_text_reader(str(doc_path)) == "legacy content"
+
+
 def test_async_image_batch_preserves_order_and_deduplicates(tmp_path, monkeypatch):
     from app.rag.chunker import _ImageContext, _extract_images_concurrently_async
 

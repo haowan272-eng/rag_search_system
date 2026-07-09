@@ -3,6 +3,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 COPY --from=uv /uv /uvx /bin/
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends antiword \
+    && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 COPY . .

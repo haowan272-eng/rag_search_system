@@ -18,6 +18,7 @@ DATABASE_URL = os.getenv(
     "postgresql://postgres:12345@127.0.0.1:5432/rag_db",
 )
 DB_ECHO = os.getenv("DB_ECHO", "false").lower() == "true"
+RUN_MIGRATIONS_ON_STARTUP = os.getenv("RUN_MIGRATIONS_ON_STARTUP", "false").lower() == "true"
 
 # ==================== JWT 配置 ====================
 SECRET_KEY = os.getenv("SECRET_KEY", "change-me-in-production-please")

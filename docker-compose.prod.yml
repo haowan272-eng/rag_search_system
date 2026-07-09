@@ -1,4 +1,17 @@
 ﻿services:
+  migrate:
+    build: .
+    image: rag_ai-backend:prod
+    command: uv run --frozen --no-dev alembic upgrade head
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-rag_user}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rag_db}}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_JSON=${LOG_JSON:-true}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   backend:
     build: .
     image: rag_ai-backend:prod
@@ -23,8 +36,10 @@
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
       - RAG_ANSWER_TIMEOUT_SECONDS=${RAG_ANSWER_TIMEOUT_SECONDS:-60}
+      - MODEL_ROOT=/app/models
     volumes:
       - uploads_data:/app/uploads
+      - ${MODEL_ROOT:?set MODEL_ROOT}:/app/models:ro
     restart: always
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=3).read()"]
@@ -33,6 +48,8 @@
       retries: 5
       start_period: 30s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       qdrant:
@@ -61,14 +78,18 @@
       - RAG_VISION_CONCURRENCY=${RAG_VISION_CONCURRENCY:-2}
       - VISION_GLOBAL_CONCURRENCY=${VISION_GLOBAL_CONCURRENCY:-2}
       - RAG_DOCUMENT_TIMEOUT_SECONDS=${RAG_DOCUMENT_TIMEOUT_SECONDS:-1800}
+      - MODEL_ROOT=/app/models
     volumes:
       - uploads_data:/app/uploads
+      - ${MODEL_ROOT:?set MODEL_ROOT}:/app/models:ro
       - model_cache:/root/.cache/huggingface
     restart: always
     stop_grace_period: 30s
     deploy:
       replicas: ${RAG_WORKER_REPLICAS:-2}
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       qdrant:

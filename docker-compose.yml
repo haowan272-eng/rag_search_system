@@ -1,4 +1,17 @@
 ﻿services:
+  migrate:
+    build: .
+    image: rag_ai-backend:1
+    command: uv run --frozen --no-dev alembic upgrade head
+    environment:
+      - DATABASE_URL=postgresql://rag_user:rag_password@postgres:5432/rag_db
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_JSON=${LOG_JSON:-true}
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   backend:
     build: .
     image: rag_ai-backend:1
@@ -6,7 +19,7 @@
     ports:
       - "8001:8001"
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://rag_user:rag_password@postgres:5432/rag_db}
+      - DATABASE_URL=postgresql://rag_user:rag_password@postgres:5432/rag_db
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_DIM=1024
       - REDIS_URL=redis://redis:6379/0
@@ -15,6 +28,7 @@
       - APP_ENV=${APP_ENV:-development}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_JSON=${LOG_JSON:-true}
+      - HOST=0.0.0.0
       - PORT=8001
       - SECRET_KEY=${SECRET_KEY}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
@@ -22,7 +36,7 @@
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
       - RAG_ANSWER_TIMEOUT_SECONDS=${RAG_ANSWER_TIMEOUT_SECONDS:-60}
-      - MODEL_ROOT=${MODEL_ROOT:-/app/models}
+      - MODEL_ROOT=/app/models
     volumes:
       - uploads_data:/app/uploads
       - ${MODEL_ROOT:-~/models}:/app/models:ro
@@ -34,6 +48,8 @@
       retries: 5
       start_period: 30s
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       qdrant:
@@ -46,7 +62,7 @@
     image: rag_ai-backend:1
     command: uv run --frozen --no-dev celery -A app.core.celery:celery_app worker --loglevel=INFO --queues=document_index --concurrency=${CELERY_WORKER_CONCURRENCY:-1}
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://rag_user:rag_password@postgres:5432/rag_db}
+      - DATABASE_URL=postgresql://rag_user:rag_password@postgres:5432/rag_db
       - QDRANT_URL=http://qdrant:6333
       - QDRANT_DIM=1024
       - REDIS_URL=redis://redis:6379/0
@@ -62,15 +78,15 @@
       - RAG_VISION_CONCURRENCY=${RAG_VISION_CONCURRENCY:-2}
       - VISION_GLOBAL_CONCURRENCY=${VISION_GLOBAL_CONCURRENCY:-2}
       - RAG_DOCUMENT_TIMEOUT_SECONDS=${RAG_DOCUMENT_TIMEOUT_SECONDS:-1800}
-      - MODEL_ROOT=${MODEL_ROOT:-/app/models}
+      - MODEL_ROOT=/app/models
     volumes:
       - uploads_data:/app/uploads
       - ${MODEL_ROOT:-~/models}:/app/models:ro
     restart: unless-stopped
     stop_grace_period: 30s
-    deploy:
-      replicas: ${RAG_WORKER_REPLICAS:-1}
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       qdrant:

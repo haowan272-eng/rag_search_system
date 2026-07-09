@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -50,7 +51,7 @@ TEXT_EXTENSIONS = {
     ".py", ".js", ".ts", ".java", ".yaml", ".yml", ".toml",
 }
 MARKITDOWN_EXTENSIONS = {
-    ".docx", ".pptx", ".xlsx", ".xls", ".epub", *TEXT_EXTENSIONS,
+    ".doc", ".docx", ".pptx", ".xlsx", ".xls", ".epub", *TEXT_EXTENSIONS,
 }
 SUPPORTED_DOCUMENT_EXTENSIONS = {".pdf", *IMAGE_EXTENSIONS, *MARKITDOWN_EXTENSIONS}
 
@@ -520,6 +521,27 @@ def _fallback_text_reader(path: str) -> str:
     extension = Path(path).suffix.lower()
     if extension in TEXT_EXTENSIONS:
         return _read_text_file(path)
+    if extension == ".doc":
+        try:
+            result = subprocess.run(
+                ["antiword", path],
+                check=True,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "Legacy .doc conversion requires antiword or MarkItDown support; install antiword in the runtime"
+            ) from exc
+        except subprocess.CalledProcessError as exc:
+            message = (exc.stderr or exc.stdout or "").strip()
+            raise RuntimeError(f"antiword failed to convert .doc: {message or exc}") from exc
+        text = clean_text(result.stdout)
+        if not text:
+            raise ValueError("antiword returned empty text for .doc")
+        return text
     raise RuntimeError(
         f"MarkItDown不可用，无法转换{extension}；请执行 uv sync 安装pyproject.toml中的依赖"
     )

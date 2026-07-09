@@ -27,7 +27,7 @@ def _check_redis() -> None:
 def _check_qdrant() -> None:
     from qdrant_client import QdrantClient
 
-    QdrantClient(url=QDRANT_URL, timeout=2).get_collections()
+    QdrantClient(url=QDRANT_URL, timeout=2, trust_env=False).get_collections()
 
 
 @router.get("/health/live")
