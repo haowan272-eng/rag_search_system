@@ -1,4 +1,4 @@
-"""RAG应用服务：编排唯一问答链路，不处理HTTP依赖注入"""
+"""RAG service orchestration."""
 from __future__ import annotations
 
 import json
@@ -6,6 +6,7 @@ import contextvars
 import logging
 import queue
 import threading
+import time
 from typing import Callable, Iterator, Optional
 
 from fastapi import HTTPException
@@ -28,6 +29,7 @@ from app.schemas.rag import (
     AnswerResponse,
     CitationResult,
     MemoryResult,
+    RetrievedSourceResult,
 )
 from app.services.conversation_context import build_conversation_context
 from app.services.memory_service import (
@@ -66,7 +68,7 @@ def _rewrite_query_for_retrieval(
 def _get_user(db: Session, username: str) -> User:
     user = db.query(User).filter(User.username == username).first()
     if not user:
-        raise HTTPException(status_code=401, detail="用户不存")
+        raise HTTPException(status_code=401, detail="User not found")
     return user
 
 
@@ -80,7 +82,7 @@ def _private_conversation(
         RagConversation.user_id == user_id,
     ).first()
     if not row:
-        raise HTTPException(status_code=404, detail="对话不存")
+        raise HTTPException(status_code=404, detail="Conversation not found")
     return row
 
 
@@ -91,7 +93,7 @@ def _effective_kb(
     effective = body.kb_id
     if conversation and conversation.kb_id is not None:
         if effective is not None and effective != conversation.kb_id:
-            raise HTTPException(status_code=400, detail="请求知识库与对话知识库不一")
+            raise HTTPException(status_code=400, detail="Request knowledge base does not match conversation knowledge base")
         effective = conversation.kb_id
     return effective
 
@@ -102,7 +104,7 @@ def _ensure_kb_viewer(db: Session, user_id: int, kb_id: int) -> None:
         KnowledgeBaseMember.user_id == user_id,
     ).first()
     if not membership:
-        raise HTTPException(status_code=403, detail="您不是该知识库的成员")
+        raise HTTPException(status_code=403, detail="User is not a member of this knowledge base")
 
 
 def _validate_document(
@@ -115,15 +117,15 @@ def _validate_document(
         return
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
-        raise HTTPException(status_code=404, detail="文档不存在")
+        raise HTTPException(status_code=404, detail="Document not found")
     if document.kb_id is None:
         if kb_id is not None:
-            raise HTTPException(status_code=400, detail="个人文档不属于指定知识库")
+            raise HTTPException(status_code=400, detail="Personal document does not belong to a knowledge base")
         if document.user_id != user.id:
-            raise HTTPException(status_code=403, detail="无权访问该个人文档")
+            raise HTTPException(status_code=403, detail="No permission to access this personal document")
         return
     if kb_id is not None and document.kb_id != kb_id:
-        raise HTTPException(status_code=400, detail="文档不属于指定知识库")
+        raise HTTPException(status_code=400, detail="Document does not belong to the specified knowledge base")
     _ensure_kb_viewer(db, user.id, document.kb_id)
 
 def run_rag_answer(
@@ -132,6 +134,16 @@ def run_rag_answer(
     body: AnswerRequest,
     on_token: Optional[Callable[[str], None]] = None,
 ) -> AnswerResponse:
+    request_started = time.perf_counter()
+    timings_ms: dict[str, float] = {}
+    last_mark = request_started
+
+    def mark(name: str) -> None:
+        nonlocal last_mark
+        now = time.perf_counter()
+        timings_ms[name] = round((now - last_mark) * 1000, 2)
+        last_mark = now
+
     user = _get_user(db, username)
     had_conversation = body.conversation_id is not None
     conversation = (
@@ -179,15 +191,18 @@ def run_rag_answer(
         remember_short_term_window(db, user.id, conversation.id)
         db.commit()
 
+    mark("setup_ms")
     memories = load_memory(db, user.id) if body.use_memory else []
     memory_text = memory_context(memories)
+    mark("memory_ms")
     rewritten_query = _rewrite_query_for_retrieval(
         question=body.query,
         history=context_state.history,
         memory=memory_text,
         task_state=context_state.task_state,
-        enabled=had_conversation and body.rewrite_query and RAG_QUERY_REWRITE_ENABLED,
+        enabled=body.rewrite_query and RAG_QUERY_REWRITE_ENABLED,
     )
+    mark("rewrite_ms")
     search_query = retrieval_query(rewritten_query, memories)
     personal_space_only = effective_kb_id is None and body.document_id is None
     retrieval_user_id = user.id if personal_space_only else None
@@ -205,6 +220,7 @@ def run_rag_answer(
                 )
             except Exception:
                 bm25_weight = 0.0
+        mark("bm25_ms")
         results = Retriever(embedder).retrieve(
             query=search_query,
             top_k=body.top_k,
@@ -214,13 +230,15 @@ def run_rag_answer(
             personal_space_only=personal_space_only,
             bm25_weight=bm25_weight,
         )
+        mark("retrieve_ms")
     except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"知识检索暂时不可用: {exc}") from exc
+        raise HTTPException(status_code=503, detail=f"Knowledge retrieval is temporarily unavailable: {exc}") from exc
 
     evidence, records = build_evidence(results)
+    mark("evidence_ms")
     degraded = False
     if not records:
-        answer = "知识库中未找到足够信息，暂时无法回答该问题。"
+        answer = "No sufficient information was found in the knowledge base to answer this question."
         response_records = []
     else:
         try:
@@ -242,12 +260,15 @@ def run_rag_answer(
                 answer = "".join(chunks).strip()
             answer, response_records = validate_answer_citations(answer, records)
             if not response_records:
-                raise ValueError("回答模型未返回有效引")
+                raise ValueError("Answer model did not return valid citations")
         except Exception:
             answer, response_records = extractive_fallback(records)
             degraded = True
 
-    citations = [CitationResult(**record.as_dict()) for record in response_records]
+    mark("answer_ms")
+    citations = [CitationResult(**record.citation_dict()) for record in response_records]
+    retrieved_sources = [RetrievedSourceResult(**record.as_dict()) for record in records]
+    retrieved_contexts = [record.context for record in records]
     memory_payload = [item.as_dict() for item in memories]
     assistant_message = RagMessage(
         conversation_id=conversation.id,
@@ -274,16 +295,23 @@ def run_rag_answer(
         assistant_message.created_at,
     )
 
+    mark("persist_ms")
+    timings_ms["total_ms"] = round((time.perf_counter() - request_started) * 1000, 2)
+    logger.info("rag timings query=%r timings_ms=%s", body.query, timings_ms)
+
     return AnswerResponse(
         query=body.query,
         rewritten_query=rewritten_query if rewritten_query != body.query else None,
         answer=answer,
         conversation_id=conversation.id,
         citations=citations,
+        retrieved_contexts=retrieved_contexts,
+        retrieved_sources=retrieved_sources,
         retrieved_count=len(results),
         memory_used=[MemoryResult(**item) for item in memory_payload],
         degraded=degraded,
         context_compacted=context_state.compacted,
+        timings_ms=timings_ms,
     )
 
 
@@ -326,7 +354,7 @@ def stream_rag_answer(username: str, body: AnswerRequest) -> Iterator[dict]:
         except Exception:
             logger.exception("streaming RAG answer failed")
             try:
-                emit("error", {"status_code": 500, "detail": "回答生成失败，请稍后重试"})
+                emit("error", {"status_code": 500, "detail": "Streaming RAG answer failed"})
             except _ClientDisconnected:
                 pass
         finally:
@@ -350,4 +378,3 @@ def stream_rag_answer(username: str, body: AnswerRequest) -> Iterator[dict]:
                 return
     finally:
         stopped.set()
-

@@ -59,12 +59,18 @@ export interface Citation {
   quote: string
 }
 
+export interface RetrievedSource extends Citation {
+  context: string
+}
+
 export interface RagAnswer {
   query: string
   rewritten_query?: string | null
   answer: string
   conversation_id: number | null
   citations: Citation[]
+  retrieved_contexts: string[]
+  retrieved_sources: RetrievedSource[]
   retrieved_count: number
   memory_used: MemoryItem[]
   degraded: boolean

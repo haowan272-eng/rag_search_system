@@ -60,7 +60,7 @@
   worker:
     build: .
     image: rag_ai-backend:1
-    command: uv run --frozen --no-dev celery -A app.core.celery:celery_app worker --loglevel=INFO --queues=document_index --concurrency=${CELERY_WORKER_CONCURRENCY:-1}
+    command: uv run --frozen --no-dev celery -A app.core.celery:celery_app worker --loglevel=INFO --queues=document_index --concurrency=${CELERY_WORKER_CONCURRENCY:-2}
     environment:
       - DATABASE_URL=postgresql://rag_user:rag_password@postgres:5432/rag_db
       - QDRANT_URL=http://qdrant:6333

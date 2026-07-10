@@ -17,6 +17,8 @@ const loading = ref(true)
 const uploading = ref(false)
 const uploadName = ref('')
 const uploadError = ref('')
+const uploadTotal = ref(0)
+const uploadCompleted = ref(0)
 const dragging = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 let timer: number | undefined
@@ -37,28 +39,40 @@ async function load() {
   } finally { loading.value = false }
 }
 
-async function upload(file?: File) {
-  if (!file || uploading.value) return
-  uploadError.value = ''
-  uploadName.value = file.name
-  uploading.value = true
+async function uploadOne(file: File) {
   const body = new FormData()
   body.append('file', file)
   if (uploadKb.value !== null) body.append('kb_id', String(uploadKb.value))
+  await api('/document/upload', { method: 'POST', body })
+}
+
+async function uploadFiles(fileList?: File[]) {
+  const files = (fileList || []).filter(Boolean)
+  if (!files.length || uploading.value) return
+  uploadError.value = ''
+  uploadTotal.value = files.length
+  uploadCompleted.value = 0
+  uploading.value = true
   try {
-    await api('/document/upload', { method: 'POST', body })
+    for (const file of files) {
+      uploadName.value = file.name
+      await uploadOne(file)
+      uploadCompleted.value += 1
+    }
     await load()
   } catch (reason) {
     uploadError.value = reason instanceof ApiError ? reason.message : '上传失败，请稍后重试。'
   } finally {
     uploading.value = false
+    uploadTotal.value = 0
+    uploadCompleted.value = 0
     if (fileInput.value) fileInput.value.value = ''
   }
 }
 
 function onDrop(event: DragEvent) {
   dragging.value = false
-  upload(event.dataTransfer?.files[0])
+  uploadFiles(Array.from(event.dataTransfer?.files || []))
 }
 
 async function remove(item: DocumentItem) {
@@ -98,10 +112,10 @@ onBeforeUnmount(() => window.clearInterval(timer))
 <template>
   <div class="page-shell">
     <header class="page-header"><div><p class="eyebrow">DOCUMENT PIPELINE</p><h1>文档中心</h1><p>上传多格式资料，跟踪异步解析、分块与向量索引状态。</p></div><button class="primary-button" @click="fileInput?.click()"><UploadCloud :size="17" />上传文档</button></header>
-    <input ref="fileInput" class="visually-hidden" type="file" accept=".pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.pptx,.xlsx,.html,.csv,.json" @change="upload(($event.target as HTMLInputElement).files?.[0])" />
+    <input ref="fileInput" class="visually-hidden" type="file" multiple accept=".pdf,.doc,.docx,.txt,.md,.jpg,.jpeg,.png,.webp,.pptx,.xlsx,.xls,.html,.csv,.json,.xml,.htm,.py,.js,.ts,.java,.yaml,.yml,.toml,.epub,.gif" @change="uploadFiles(Array.from(($event.target as HTMLInputElement).files || []))" />
     <section class="upload-zone" :class="{ dragging, uploading }" @dragenter.prevent="dragging = true" @dragover.prevent @dragleave.prevent="dragging = false" @drop.prevent="onDrop" @click="!uploading && fileInput?.click()">
       <div class="upload-icon"><LoaderCircle v-if="uploading" :size="25" class="spin" /><UploadCloud v-else :size="25" /></div>
-      <div><h2>{{ uploading ? `正在上传 ${uploadName}` : '拖放文档到这里' }}</h2><p>{{ uploading ? '上传完成后将进入 Redis 异步索引队列' : '或点击选择文件 · 支持 PDF、Word、图片、Markdown 等格式' }}</p></div>
+      <div><h2>{{ uploading ? '正在上传 ' + uploadName + (uploadTotal > 1 ? ' (' + uploadCompleted + '/' + uploadTotal + ')' : '') : '拖放文档到这里' }}</h2><p>{{ uploading ? '上传完成后将进入 Redis 异步索引队列' : '或点击选择文件 · 支持 PDF、Word、图片、Markdown 等格式' }}</p></div>
       <label class="upload-target" @click.stop><span>上传到</span><select v-model="uploadKb"><option :value="null">个人空间</option><option v-for="kb in writableKnowledgeBases" :key="kb.id" :value="kb.id">{{ kb.name }}</option></select></label>
     </section>
     <p v-if="uploadError" class="inline-error closable">{{ uploadError }}<button @click="uploadError = ''"><X :size="15" /></button></p>

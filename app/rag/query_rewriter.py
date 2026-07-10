@@ -6,10 +6,10 @@ from typing import Optional
 from app.core.config import (
     DEEPSEEK_API_KEY,
     DEEPSEEK_BASE_URL,
-    DEEPSEEK_MODEL,
     RAG_ANSWER_MAX_RETRIES,
     RAG_ANSWER_TIMEOUT_SECONDS,
     RAG_QUERY_REWRITE_MAX_CHARS,
+    RAG_QUERY_REWRITE_MODEL,
     RAG_QUERY_REWRITE_TEMPERATURE,
 )
 
@@ -22,7 +22,7 @@ class LangChainQueryRewriter:
 
     def _build_chain(self):
         if not DEEPSEEK_API_KEY:
-            raise RuntimeError("未配置 DEEPSEEK_API_KEY，无法改写检索问题")
+            raise RuntimeError("DEEPSEEK_API_KEY is not configured; cannot rewrite retrieval query")
         from langchain_core.output_parsers import StrOutputParser
         from langchain_core.prompts import ChatPromptTemplate
         from langchain_openai import ChatOpenAI
@@ -30,16 +30,18 @@ class LangChainQueryRewriter:
         prompt = ChatPromptTemplate.from_messages([
             (
                 "system",
-                """你是 RAG 检索 Query 改写器，负责执行 rewrite-retrieve-read 中的 rewrite 步骤。
-目标：把用户当前问题改写为适合知识库检索的独立中文检索问题。
+                """你是 RAG 检索 Query 改写器，只负责把用户问题改写成更适合检索的中文查询。
+目标：提升 BM25 关键词匹配和向量语义检索的召回，但不能改变问题意图。
 规则：
-1. 只输出改写后的检索问题，不要回答问题，不要解释。
-2. 保留用户原始意图、限定条件、实体名、时间、数量、格式要求和关键术语。
-3. 根据最近对话补全省略、指代和上下文依赖，例如“它”“这个方案”“上面那个”。
-4. 私人长期记忆只能用于补全偏好、约束或检索范围，不能编造事实。
-5. 不要加入对话和记忆中没有依据的新实体、新数字、新结论。
-6. 如果当前问题已经独立清晰，尽量保持原样，只做必要的关键词增强。
-7. 输出应适合 BM25 + 向量检索，优先使用自然语言短问题，可附带关键同义词。""",
+1. 只输出一条改写后的检索 query，不要回答问题，不要解释，不要列多条。
+2. 保留原问题中的专有名词、数字、时间、地点、文件对象、技术术语和否定条件。
+3. 对“它、这个、这些资料、该项目、上述方法”等指代，只能根据最近对话补全明确对象。
+4. 当前问题已经独立清晰时，尽量原样保留，只补 2-6 个有助于检索的关键词或同义词。
+5. 不要加入没有依据的新实体、新结论、新金额、新日期或推测性背景。
+6. 不要把问题改写成答案，也不要扩展成研究计划、总结提纲或多跳推理链。
+7. 如果无法确定如何补全或增强，原样返回用户问题。
+8. 输出长度控制在 15-80 个中文字符；综合题可略长，但必须仍是单条检索 query。
+9. 优先包含：核心实体 + 关键技术词 + 用户要问的关系/属性/结果。""",
             ),
             (
                 "human",
@@ -55,11 +57,11 @@ class LangChainQueryRewriter:
 【用户当前问题】
 {question}
 
-请输出一个独立、清晰、适合知识库检索的 Query。""",
+请只输出一条独立、清晰、保守、适合知识库检索的 Query。""",
             ),
         ])
         model = ChatOpenAI(
-            model=DEEPSEEK_MODEL,
+            model=RAG_QUERY_REWRITE_MODEL,
             api_key=DEEPSEEK_API_KEY,
             base_url=DEEPSEEK_BASE_URL,
             temperature=RAG_QUERY_REWRITE_TEMPERATURE,

@@ -37,13 +37,20 @@ class MemoryResult(BaseModel):
     weight: float
 
 
+class RetrievedSourceResult(CitationResult):
+    context: str
+
+
 class AnswerResponse(BaseModel):
     query: str
     rewritten_query: Optional[str] = None
     answer: str
     conversation_id: int
     citations: list[CitationResult]
+    retrieved_contexts: list[str]
+    retrieved_sources: list[RetrievedSourceResult]
     retrieved_count: int
     memory_used: list[MemoryResult]
     degraded: bool = False
     context_compacted: bool = False
+    timings_ms: dict[str, float] = Field(default_factory=dict)

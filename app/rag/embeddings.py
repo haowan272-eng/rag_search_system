@@ -17,6 +17,8 @@ import numpy as np
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import RAG_RERANK_CANDIDATES
+
 from app.models.document import Document
 from app.rag.chunk_models import DocumentChunk
 from app.rag.rag_models import ChunkEmbedding
@@ -445,7 +447,7 @@ class Embedder:
         dense_map = {r["chunk_id"]: r for r in dense_raw}
         chunk_map = {c["id"]: c for c in (bm25_state["chunks"] if bm25_state else [])}
         candidates: list[dict] = []
-        for chunk_id, _ in rrf[: top_k * 2]:
+        for chunk_id, _ in rrf[: max(top_k, RAG_RERANK_CANDIDATES)]:
             chunk = chunk_map.get(chunk_id)
             dense = dense_map.get(chunk_id, {})
             if chunk:
