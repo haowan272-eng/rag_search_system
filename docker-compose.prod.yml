@@ -20,7 +20,9 @@
       - "8001:8001"
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-rag_user}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rag_db}}
-      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT_PREFER_GRPC=${QDRANT_PREFER_GRPC:-false}
       - QDRANT_DIM=1024
       - REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/1
@@ -29,10 +31,10 @@
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_JSON=${LOG_JSON:-true}
       - PORT=8001
-      - SECRET_KEY=${SECRET_KEY}
-      - REFRESH_SECRET_KEY=${REFRESH_SECRET_KEY}
-      - CORS_ORIGINS=${CORS_ORIGINS}
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - SECRET_KEY=${SECRET_KEY:?set SECRET_KEY}
+      - REFRESH_SECRET_KEY=${REFRESH_SECRET_KEY:?set REFRESH_SECRET_KEY}
+      - CORS_ORIGINS=${CORS_ORIGINS:?set CORS_ORIGINS}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:?set DEEPSEEK_API_KEY}
       - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
       - RAG_ANSWER_TIMEOUT_SECONDS=${RAG_ANSWER_TIMEOUT_SECONDS:-60}
@@ -63,7 +65,9 @@
     command: uv run --frozen --no-dev celery -A app.core.celery:celery_app worker --loglevel=INFO --queues=document_index --concurrency=${CELERY_WORKER_CONCURRENCY:-1}
     environment:
       - DATABASE_URL=${DATABASE_URL:-postgresql://${POSTGRES_USER:-rag_user}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-rag_db}}
-      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_URL=${QDRANT_URL:-http://qdrant:6333}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - QDRANT_PREFER_GRPC=${QDRANT_PREFER_GRPC:-false}
       - QDRANT_DIM=1024
       - REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
       - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/1

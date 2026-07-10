@@ -200,7 +200,7 @@ def run_rag_answer(
         history=context_state.history,
         memory=memory_text,
         task_state=context_state.task_state,
-        enabled=body.rewrite_query and RAG_QUERY_REWRITE_ENABLED,
+        enabled=had_conversation and body.rewrite_query and RAG_QUERY_REWRITE_ENABLED,
     )
     mark("rewrite_ms")
     search_query = retrieval_query(rewritten_query, memories)

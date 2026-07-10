@@ -6,7 +6,7 @@ import time
 from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
-from app.core.config import QDRANT_URL
+from app.core.config import QDRANT_API_KEY, QDRANT_PREFER_GRPC, QDRANT_URL
 from app.core.database import engine
 from app.core.redis import get_redis
 
@@ -27,7 +27,13 @@ def _check_redis() -> None:
 def _check_qdrant() -> None:
     from qdrant_client import QdrantClient
 
-    QdrantClient(url=QDRANT_URL, timeout=2, trust_env=False).get_collections()
+    QdrantClient(
+        url=QDRANT_URL,
+        api_key=QDRANT_API_KEY,
+        prefer_grpc=QDRANT_PREFER_GRPC,
+        timeout=2,
+        trust_env=False,
+    ).get_collections()
 
 
 @router.get("/health/live")

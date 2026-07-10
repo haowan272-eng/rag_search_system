@@ -29,10 +29,25 @@ export const tokenStore = {
 
 let refreshing: Promise<string> | null = null
 
+function handleRefreshFailure(): never {
+  tokenStore.clear()
+  if (!location.pathname.startsWith('/login')) location.assign('/login?expired=1')
+  throw new ApiError(401, '登录状态已过期')
+}
+
+async function fetchOrApiError(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init)
+  } catch (error) {
+    const reason = error instanceof Error && error.message ? `：${error.message}` : ''
+    throw new ApiError(0, `网络请求失败${reason}`)
+  }
+}
+
 async function refreshAccessToken(): Promise<string> {
   const refreshToken = tokenStore.refresh()
   if (!refreshToken) throw new ApiError(401, '登录状态已失效')
-  const response = await fetch(`${API_BASE}/refresh`, {
+  const response = await fetchOrApiError(`${API_BASE}/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: refreshToken }),
@@ -61,16 +76,14 @@ export async function api<T>(path: string, init: RequestInit = {}, retry = true)
   if (token) headers.set('Authorization', `Bearer ${token}`)
   if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
 
-  const response = await fetch(`${API_BASE}${path}`, { ...init, headers })
+  const response = await fetchOrApiError(`${API_BASE}${path}`, { ...init, headers })
   if (response.status === 401 && retry && tokenStore.refresh()) {
     try {
       refreshing ||= refreshAccessToken().finally(() => { refreshing = null })
       await refreshing
       return api<T>(path, init, false)
     } catch {
-      tokenStore.clear()
-      if (!location.pathname.startsWith('/login')) location.assign('/login?expired=1')
-      throw new ApiError(401, '登录状态已过期')
+      handleRefreshFailure()
     }
   }
   if (!response.ok) {
@@ -94,13 +107,17 @@ export async function postSse(
   const headers = new Headers({ 'Content-Type': 'application/json', Accept: 'text/event-stream' })
   const token = tokenStore.access()
   if (token) headers.set('Authorization', `Bearer ${token}`)
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetchOrApiError(`${API_BASE}${path}`, {
     method: 'POST', headers, body: JSON.stringify(body),
   })
   if (response.status === 401 && retry && tokenStore.refresh()) {
-    refreshing ||= refreshAccessToken().finally(() => { refreshing = null })
-    await refreshing
-    return postSse(path, body, onEvent, false)
+    try {
+      refreshing ||= refreshAccessToken().finally(() => { refreshing = null })
+      await refreshing
+      return postSse(path, body, onEvent, false)
+    } catch {
+      handleRefreshFailure()
+    }
   }
   if (!response.ok || !response.body) {
     let errorBody: unknown
@@ -127,7 +144,12 @@ export async function postSse(
         }
         if (dataLines.length) {
           const raw = dataLines.join('\n')
-          onEvent(event, raw ? JSON.parse(raw) : {})
+          try {
+            onEvent(event, raw ? JSON.parse(raw) : {})
+          } catch (error) {
+            if (error instanceof SyntaxError) throw new ApiError(0, `流式响应 JSON 解析失败：${event}`)
+            throw error
+          }
         }
         boundary = buffer.indexOf('\n\n')
       }

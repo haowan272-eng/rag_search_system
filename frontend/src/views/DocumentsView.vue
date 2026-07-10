@@ -27,8 +27,9 @@ const filtered = computed(() => rows.value.filter((item) => {
   const matchesSearch = item.file_name.toLowerCase().includes(search.value.toLowerCase())
   return matchesSearch && (filterKb.value === null || item.kb_id === filterKb.value)
 }))
+const inProgressStatuses = ['uploaded', 'processing', 'indexing']
 const writableKnowledgeBases = computed(() => knowledgeBases.value.filter((kb) => ['owner', 'admin', 'editor'].includes(kb.role || '')))
-const processingCount = computed(() => rows.value.filter((item) => ['uploaded', 'processing'].includes(item.status)).length)
+const processingCount = computed(() => rows.value.filter((item) => inProgressStatuses.includes(item.status)).length)
 
 async function load() {
   try {
@@ -98,6 +99,7 @@ function iconFor(item: DocumentItem) {
 function statusInfo(status: string) {
   if (status === 'indexed') return { label: '已完成索引', class: 'success', icon: CheckCircle2 }
   if (status === 'failed') return { label: '索引失败', class: 'danger', icon: CircleAlert }
+  if (status === 'indexing') return { label: '正在索引', class: 'working', icon: LoaderCircle }
   if (status === 'processing') return { label: '正在解析', class: 'working', icon: LoaderCircle }
   return { label: '等待处理', class: 'pending', icon: Clock3 }
 }
@@ -125,7 +127,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
     <EmptyState v-else-if="!filtered.length" title="这里还没有文档" description="上传第一份资料，后台 Worker 会自动完成提取、Markdown 转换、分块和索引。" />
     <div v-else class="document-table-wrap">
       <table class="document-table"><thead><tr><th>文件</th><th>所属知识库</th><th>大小</th><th>索引状态</th><th>上传时间</th><th></th></tr></thead>
-        <tbody><tr v-for="item in filtered" :key="item.id"><td><div class="file-cell"><div><component :is="iconFor(item)" :size="19" /></div><span><strong>{{ item.file_name }}</strong><small>{{ item.content_type || '未知类型' }}</small></span></div></td><td>{{ knowledgeBases.find((kb) => kb.id === item.kb_id)?.name || '个人空间' }}</td><td>{{ size(item.file_size) }}</td><td><span class="status-badge" :class="statusInfo(item.status).class"><component :is="statusInfo(item.status).icon" :size="14" :class="{ spin: item.status === 'processing' }" />{{ statusInfo(item.status).label }}</span></td><td>{{ new Date(item.created_at).toLocaleDateString('zh-CN') }}</td><td><button class="icon-button danger-action" title="删除文档" @click="remove(item)"><Trash2 :size="16" /></button></td></tr></tbody>
+        <tbody><tr v-for="item in filtered" :key="item.id"><td><div class="file-cell"><div><component :is="iconFor(item)" :size="19" /></div><span><strong>{{ item.file_name }}</strong><small>{{ item.content_type || '未知类型' }}</small></span></div></td><td>{{ knowledgeBases.find((kb) => kb.id === item.kb_id)?.name || '个人空间' }}</td><td>{{ size(item.file_size) }}</td><td><span class="status-badge" :class="statusInfo(item.status).class"><component :is="statusInfo(item.status).icon" :size="14" :class="{ spin: inProgressStatuses.includes(item.status) }" />{{ statusInfo(item.status).label }}</span></td><td>{{ new Date(item.created_at).toLocaleDateString('zh-CN') }}</td><td><button class="icon-button danger-action" title="删除文档" @click="remove(item)"><Trash2 :size="16" /></button></td></tr></tbody>
       </table>
     </div>
   </div>

@@ -728,21 +728,11 @@ def chunk_markdown(
                 )
             )
 
+    window_radius = 1
     for index, chunk in enumerate(chunks):
-        selected = {index}
-        used = approx_token_len(chunk.content)
-        candidates = [
-            i for i, candidate in enumerate(chunks)
-            if candidate.heading_path == chunk.heading_path
-        ]
-        for candidate_index in sorted(candidates, key=lambda i: abs(i - index)):
-            if candidate_index == index:
-                continue
-            count = approx_token_len(chunks[candidate_index].content)
-            if used + count <= parent_tokens:
-                selected.add(candidate_index)
-                used += count
-        chunk.parent_content = "\n\n".join(chunks[i].content for i in sorted(selected))
+        start = max(0, index - window_radius)
+        end = min(len(chunks), index + window_radius + 1)
+        chunk.parent_content = "\n\n".join(chunks[i].content for i in range(start, end))
     return chunks
 
 

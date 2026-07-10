@@ -8,7 +8,14 @@ from __future__ import annotations
 import hashlib
 from typing import Optional
 
-from app.core.config import QDRANT_COLLECTION_NAME, QDRANT_DIM, QDRANT_QUANTIZATION, QDRANT_URL
+from app.core.config import (
+    QDRANT_API_KEY,
+    QDRANT_COLLECTION_NAME,
+    QDRANT_DIM,
+    QDRANT_PREFER_GRPC,
+    QDRANT_QUANTIZATION,
+    QDRANT_URL,
+)
 
 
 class QdrantStore:
@@ -29,10 +36,13 @@ class QdrantStore:
             from qdrant_client import QdrantClient
 
             # httpx + WSL 端口转发有兼容性问题，强制走 gRPC (6334)
-            from urllib.parse import urlparse
-            parsed = urlparse(self.url)
-            host = parsed.hostname or "127.0.0.1"
-            self._client = QdrantClient(host=host, grpc_port=6334, prefer_grpc=True, timeout=30)
+            self._client = QdrantClient(
+                url=self.url,
+                api_key=QDRANT_API_KEY,
+                prefer_grpc=QDRANT_PREFER_GRPC,
+                timeout=30,
+                trust_env=False,
+            )
         return self._client
 
     @staticmethod

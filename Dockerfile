@@ -4,7 +4,7 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY --from=uv /uv /uvx /bin/
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends antiword \
+    && apt-get install -y --no-install-recommends antiword tesseract-ocr tesseract-ocr-chi-sim \
     && rm -rf /var/lib/apt/lists/*
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev

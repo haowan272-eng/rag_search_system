@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.config import (
+    RAG_MEMORY_EXTRACTION_INTERVAL_MESSAGES,
+    RAG_MEMORY_EXTRACTION_MIN_CHARS,
+)
 from app.models import UserMemory
 from app.services.memory_extractor import extract_from_conversation, extract_from_message
 from app.services.short_term_memory import load_short_term_messages
@@ -81,6 +85,20 @@ def _upsert_candidates(
     return [item["keyword"] for item in extracted]
 
 
+def _is_effective_memory_candidate(content: str) -> bool:
+    text = " ".join((content or "").split())
+    short_commands = {
+        "好", "好的", "可以", "行", "嗯", "继续", "执行", "开始", "不要", "是", "不是",
+        "ok", "yes", "no",
+    }
+    return bool(text) and text.lower() not in short_commands
+
+
+def _meets_memory_batch_threshold(content: str) -> bool:
+    text = " ".join((content or "").split())
+    return _is_effective_memory_candidate(text) and len(text) >= RAG_MEMORY_EXTRACTION_MIN_CHARS
+
+
 def remember_user_message(
     db: Session,
     user_id: int,
@@ -88,6 +106,8 @@ def remember_user_message(
     content: str,
 ) -> list[str]:
     """兼容单消息提取入口；新问答主链使用短期窗口入口"""
+    if not _meets_memory_batch_threshold(content):
+        return []
     return _upsert_candidates(
         db,
         user_id,
@@ -120,12 +140,24 @@ def remember_short_term_window(
     )
     if not pending:
         return []
+
+    has_existing_memory = db.query(UserMemory.id).filter(UserMemory.user_id == user_id).first() is not None
+    candidate = _meets_memory_batch_threshold if has_existing_memory else _is_effective_memory_candidate
+    effective_rows = [
+        row for row in pending
+        if candidate(cached_content.get(row.id, row.content))
+    ]
+    if has_existing_memory and len(effective_rows) < RAG_MEMORY_EXTRACTION_INTERVAL_MESSAGES:
+        return []
+    if not has_existing_memory and not effective_rows:
+        return []
+
     messages = [
         {
             "role": "user",
             "content": cached_content.get(row.id, row.content),
         }
-        for row in pending
+        for row in effective_rows
     ]
     keywords = _upsert_candidates(
         db,
@@ -161,6 +193,8 @@ def memory_context(memories: list[MemorySnapshot]) -> str:
         "preference": "偏好",
         "budget": "预算",
         "constraint": "限制",
+        "project": "项目",
+        "topic": "主题",
         "other": "其他",
     }
     return "\n".join(

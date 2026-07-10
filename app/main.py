@@ -29,6 +29,16 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RAG Knowledge Platform", version="1.0.0")
 
+
+def _validate_production_secret(name: str, value: str) -> None:
+    normalized = (value or "").strip()
+    if (
+        not normalized
+        or len(normalized) < 32
+        or normalized.lower().startswith("change-me")
+    ):
+        raise RuntimeError(f"生产环境必须配置安全的 {name}")
+
 # ---- 全局异常处理器 ----
 
 @app.exception_handler(Exception)
@@ -85,10 +95,9 @@ def on_startup():
     """启动时：建表、创建种子用户（bcrypt 哈希）并初始化 Redis。"""
     import bcrypt
 
-    if APP_ENV == "production" and SECRET_KEY == "change-me-in-production-please":
-        raise RuntimeError("生产环境必须配置安全的 SECRET_KEY")
-    if APP_ENV == "production" and REFRESH_SECRET_KEY == "change-me-in-production-refresh":
-        raise RuntimeError("生产环境必须配置安全的 REFRESH_SECRET_KEY")
+    if APP_ENV == "production":
+        _validate_production_secret("SECRET_KEY", SECRET_KEY)
+        _validate_production_secret("REFRESH_SECRET_KEY", REFRESH_SECRET_KEY)
     if APP_ENV == "production" and "*" in CORS_ORIGINS:
         raise RuntimeError("生产环境 CORS_ORIGINS 不允许使用通配")
 
