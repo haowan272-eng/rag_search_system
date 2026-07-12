@@ -203,6 +203,26 @@ def test_document_lock_heartbeat_only_refreshes_owned_lock(monkeypatch):
     assert "task-token" in client.args
 
 
+def test_document_index_lock_busy_is_retried_not_acknowledged(monkeypatch):
+    from app.services import document_index_service
+
+    class FakeSession:
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(document_index_service, "SessionLocal", lambda: FakeSession())
+    monkeypatch.setattr(document_index_service, "acquire_doc_index_lock", lambda *_args: False)
+
+    try:
+        document_index_service.run_document_index(7, 3, "task-token")
+        raise AssertionError("expected lock busy")
+    except document_index_service.DocumentIndexLockBusy as exc:
+        assert "Document 7 is locked" in str(exc)
+
+
 def test_worker_async_boundary_enforces_total_timeout(monkeypatch):
     from app.services import document_index_service
 

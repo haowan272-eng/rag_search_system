@@ -25,6 +25,10 @@ class DocumentIndexNotFound(RuntimeError):
     pass
 
 
+class DocumentIndexLockBusy(RuntimeError):
+    pass
+
+
 def _run_document_chunking(
     document_id: int,
     db,
@@ -65,7 +69,9 @@ def run_document_index(
             raise RuntimeError("Redis unavailable while acquiring document lock")
         lock_acquired = lock_status
         if not lock_acquired:
-            return {"status": "duplicate", "document_id": document_id}
+            raise DocumentIndexLockBusy(
+                f"Document {document_id} is locked by another indexing task"
+            )
 
         def heartbeat():
             while not heartbeat_stop.wait(DOC_INDEX_LOCK_HEARTBEAT_SECONDS):
@@ -197,6 +203,7 @@ def run_document_index(
 
 
 __all__ = [
+    "DocumentIndexLockBusy",
     "DocumentIndexNotFound",
     "_run_document_chunking",
     "run_document_index",

@@ -91,6 +91,45 @@ def test_document_celery_task_uses_late_ack_and_worker_loss_redelivery():
     assert index_document_task.reject_on_worker_lost is True
 
 
+def test_document_celery_task_retries_when_document_lock_is_busy(monkeypatch):
+    from app.services.document_index_service import DocumentIndexLockBusy
+    from app.tasks import document_index
+
+    progress_calls = []
+
+    monkeypatch.setattr(
+        document_index,
+        "run_document_index",
+        lambda *_args: (_ for _ in ()).throw(DocumentIndexLockBusy("locked")),
+    )
+    monkeypatch.setattr(
+        document_index,
+        "store_doc_index_progress",
+        lambda *args, **kwargs: progress_calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        document_index,
+        "_update_failed_document",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not fail document")),
+    )
+    monkeypatch.setattr(
+        document_index.index_document_task,
+        "retry",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError(f"retry:{kwargs['countdown']}")),
+    )
+
+    document_index.index_document_task.push_request(id="task-1", retries=0)
+    try:
+        with pytest.raises(RuntimeError, match="retry:5"):
+            document_index.index_document_task.run(document_id=7, user_id=3)
+    finally:
+        document_index.index_document_task.pop_request()
+
+    assert progress_calls == [
+        ((7, "waiting_lock", "locked"), {"task_id": "task-1", "attempt": 1})
+    ]
+
+
 def test_invalid_pdf_signature_is_rejected():
     from app.api.document import _has_valid_signature
 

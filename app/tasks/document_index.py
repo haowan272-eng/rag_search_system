@@ -7,6 +7,7 @@ from app.core.database import SessionLocal
 from app.models import Document
 from app.queue import record_dead_document_task, store_doc_index_progress
 from app.services.document_index_service import (
+    DocumentIndexLockBusy,
     DocumentIndexNotFound,
     run_document_index,
 )
@@ -47,6 +48,19 @@ def index_document_task(
     attempt = int(self.request.retries or 0)
     try:
         return run_document_index(document_id, user_id, task_id)
+    except DocumentIndexLockBusy as exc:
+        message = str(exc)
+        store_doc_index_progress(
+            document_id,
+            "waiting_lock",
+            message,
+            task_id=task_id,
+            attempt=attempt + 1,
+        )
+        raise self.retry(
+            exc=exc,
+            countdown=min(60, max(5, 2 ** attempt)),
+        )
     except DocumentIndexNotFound as exc:
         message = str(exc)
         _update_failed_document(document_id, "failed", message)
