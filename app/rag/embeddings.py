@@ -322,7 +322,6 @@ class Embedder:
                         "page_start": chunk.page_start,
                         "page_end": chunk.page_end,
                         "heading_path": chunk_meta.get("heading_path"),
-                        "parent_content": chunk_meta.get("parent_content"),
                         "source_type": chunk_meta.get("source_type"),
                         "location": chunk_meta.get("location"),
                     },

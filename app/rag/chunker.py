@@ -599,7 +599,6 @@ class MarkdownChunk:
             "source_type": self.source_type,
             "location": self.location,
             "modality": self.modality,
-            "parent_content": self.parent_content,
         }
 
 

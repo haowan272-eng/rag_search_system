@@ -6,10 +6,12 @@
 .gitignore
 .idea
 .pytest_cache
+.uv-cache
 .venv
 __pycache__
 *.py[cod]
 uploads
+evaluation
 tests
 testpy
 docs

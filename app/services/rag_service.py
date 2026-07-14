@@ -23,6 +23,7 @@ from app.rag.answering import (
 from app.rag.chain import Retriever
 from app.rag.query_rewriter import get_query_rewriter
 from app.rag.embeddings import get_embedder
+from app.rag.parent_context import attach_parent_contexts
 from app.core.config import RAG_QUERY_REWRITE_ENABLED
 from app.schemas.rag import (
     AnswerRequest,
@@ -230,6 +231,7 @@ def run_rag_answer(
             personal_space_only=personal_space_only,
             bm25_weight=bm25_weight,
         )
+        results = attach_parent_contexts(db, results)
         mark("retrieve_ms")
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"Knowledge retrieval is temporarily unavailable: {exc}") from exc

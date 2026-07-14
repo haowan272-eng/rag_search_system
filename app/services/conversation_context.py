@@ -104,12 +104,19 @@ def _role_line(message, max_tokens: int = 400) -> str:
     return f"- {labels.get(role, role)}：{content}"
 
 
+def _raw_role_line(message) -> str:
+    labels = {"user": "用户", "assistant": "助手", "system": "系统"}
+    role = _value(message, "role")
+    content = " ".join((_value(message, "content") or "").split())
+    return f"- {labels.get(role, role)}：{content}"
+
+
 def _clip(text: str, max_tokens: int, keep: str = "end") -> str:
     return truncate_tokens(" ".join((text or "").split()), max_tokens, keep=keep)
 
 
-def _message_text(message: RagMessage, max_tokens: int = 220) -> str:
-    content = " ".join((message.content or "").split())
+def _message_text(message, max_tokens: int = 220) -> str:
+    content = " ".join((_value(message, "content") or "").split())
     return truncate_tokens(content, max_tokens, keep="end")
 
 
@@ -143,14 +150,14 @@ def _section_lines(items: list[str], max_tokens: int) -> list[str]:
     return list(reversed(selected))
 
 
-def _extract_summary_sections(messages: list[RagMessage]) -> dict[str, list[str]]:
+def _extract_summary_sections(messages: list) -> dict[str, list[str]]:
     sections = {key: [] for key in SUMMARY_SECTION_BUDGETS}
     raw_candidates: list[str] = []
     latest_metrics: dict[str, str] = {}
     latest_configs: dict[str, str] = {}
 
     for message in messages:
-        role = message.role
+        role = _value(message, "role")
         text = _message_text(message, max_tokens=260)
         if not text:
             continue
@@ -274,11 +281,20 @@ def _bounded_history(summary: str | None, recent: list[dict]) -> str:
         summary_text = truncate_tokens(summary, RAG_MEMORY_SUMMARY_MAX_TOKENS, keep="end")
         summary_part = "【历史压缩摘要】\n" + summary_text
 
-    recent_lines = [_role_line(row) for row in recent]
-    recent_lines = fit_recent_lines(recent_lines, RAG_MEMORY_RECENT_MAX_TOKENS)
     recent_part = ""
-    if recent_lines:
-        recent_part = "【最近原始消息】\n" + "\n".join(recent_lines)
+    if recent:
+        recent_notes = _render_summary_sections(_extract_summary_sections(recent))
+        if recent_notes:
+            recent_part = "【最近对话要点】\n" + truncate_tokens(
+                recent_notes,
+                RAG_MEMORY_RECENT_MAX_TOKENS,
+                keep="end",
+            )
+        else:
+            recent_lines = [_role_line(row) for row in recent]
+            recent_lines = fit_recent_lines(recent_lines, RAG_MEMORY_RECENT_MAX_TOKENS)
+            if recent_lines:
+                recent_part = "【最近原始消息】\n" + "\n".join(recent_lines)
 
     parts = [part for part in (summary_part, recent_part) if part]
     history = "\n\n".join(parts) or "（无历史对话）"
@@ -312,7 +328,7 @@ def build_conversation_context(
     )
     state_messages = list(uncompressed)
     compacted = False
-    uncompressed_tokens = count_tokens("\n".join(_role_line(row) for row in uncompressed))
+    uncompressed_tokens = count_tokens("\n".join(_raw_role_line(row) for row in uncompressed))
     should_compact = (
         len(uncompressed) >= RAG_COMPACTION_THRESHOLD
         or uncompressed_tokens > RAG_MEMORY_MAX_TOKENS
